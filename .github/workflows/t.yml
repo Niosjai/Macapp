@@ -1,35 +1,53 @@
-name: MacApp CI
+name: Install TeamViewer and Retrieve ID
 
-on: push
+on:
+  workflow_dispatch: # Allows manual trigger
 
 jobs:
   build:
-    runs-on: macos-latest
-
+    runs-on: macos-14 # Use macOS runner
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install TeamViewer
         run: |
           brew install --cask teamviewer
-          echo "TeamViewer installed."
+          echo "TeamViewer installed successfully."
 
-      - name: Retrieve TeamViewer ID
+      - name: Wait for TeamViewer to initialize
         run: |
-          if command -v teamviewer &> /dev/null; then
-            TEAMVIEWER_ID=$(teamviewer info | grep "TeamViewer ID" | awk '{print $4}')
-            echo "TeamViewer ID: $TEAMVIEWER_ID"
-            echo "TEAMVIEWER_ID=$TEAMVIEWER_ID" >> $GITHUB_ENV
-          else
-            echo "TeamViewer not found!"
+          echo "Waiting for TeamViewer to initialize..."
+          sleep 10 # Give some time for TeamViewer to register an ID
+
+      - name: Check TeamViewer Installation
+        run: |
+          if ! command -v teamviewer &> /dev/null; then
+            echo "TeamViewer installation failed!"
+            exit 1
           fi
+          echo "TeamViewer is installed."
 
-      - name: Expose TeamViewer ID as Artifact
-        run: echo "$TEAMVIEWER_ID" > teamviewer_id.txt
+      - name: Get TeamViewer ID
+        run: |
+          # Try to retrieve the TeamViewer ID
+          TEAMVIEWER_ID=$(teamviewer info | grep "TeamViewer ID" | awk '{print $4}')
+          
+          if [[ -z "$TEAMVIEWER_ID" ]]; then
+            echo "Failed to retrieve TeamViewer ID!"
+            exit 1
+          fi
+          
+          echo "TeamViewer ID: $TEAMVIEWER_ID"
+          echo "TEAMVIEWER_ID=$TEAMVIEWER_ID" >> $GITHUB_ENV
 
-      - name: Upload TeamViewer ID
+      - name: Save TeamViewer ID to File
+        run: |
+          echo "$TEAMVIEWER_ID" > teamviewer_id.txt
+
+      - name: Upload TeamViewer ID as Artifact
         uses: actions/upload-artifact@v4
         with:
           name: TeamViewer-ID
           path: teamviewer_id.txt
+          if-no-files-found: error # Fail if file is missing
