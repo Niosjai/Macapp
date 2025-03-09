@@ -1,15 +1,15 @@
 name: Mac Remote Access
 
 on:  
-  workflow_dispatch  # Manually trigger the workflow
+  workflow_dispatch  # Manual trigger
 
 jobs:
   remote-access:
-    runs-on: macos-latest  # Uses GitHub-hosted Mac runner
+    runs-on: macos-latest  
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-        
+
       - name: Install Ngrok
         run: |
           brew install ngrok
@@ -21,18 +21,15 @@ jobs:
           sudo dscl . -create /Users/github
           sudo dscl . -passwd /Users/github password123
           sudo dscl . -append /Groups/admin GroupMembership github
-          sudo systemsetup -setremotelogin on
           sudo launchctl load /System/Library/LaunchDaemons/ssh.plist
-          
+
       - name: Start Ngrok Tunnel
         run: |
-          ngrok tcp 22 > /dev/null &
+          ngrok tcp 22 > ngrok.log &
           sleep 5
           curl -s http://localhost:4040/api/tunnels > tunnels.json
           echo "Ngrok SSH Tunnel:"
           cat tunnels.json | jq -r '.tunnels[0].public_url'
 
-      - name: Show Connection Details
-        run: |
-          echo "SSH Command:"
-          echo "ssh github@$(cat tunnels.json | jq -r '.tunnels[0].public_url' | sed 's/tcp:\/\///')"
+      - name: Keep Workflow Alive
+        run: sleep 86400  # Keeps workflow running for 24 hours
