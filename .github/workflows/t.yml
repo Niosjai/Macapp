@@ -1,0 +1,35 @@
+name: MacApp CI
+
+on: push
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install TeamViewer
+        run: |
+          brew install --cask teamviewer
+          echo "TeamViewer installed."
+
+      - name: Retrieve TeamViewer ID
+        run: |
+          if command -v teamviewer &> /dev/null; then
+            TEAMVIEWER_ID=$(teamviewer info | grep "TeamViewer ID" | awk '{print $4}')
+            echo "TeamViewer ID: $TEAMVIEWER_ID"
+            echo "TEAMVIEWER_ID=$TEAMVIEWER_ID" >> $GITHUB_ENV
+          else
+            echo "TeamViewer not found!"
+          fi
+
+      - name: Expose TeamViewer ID as Artifact
+        run: echo "$TEAMVIEWER_ID" > teamviewer_id.txt
+
+      - name: Upload TeamViewer ID
+        uses: actions/upload-artifact@v4
+        with:
+          name: TeamViewer-ID
+          path: teamviewer_id.txt
