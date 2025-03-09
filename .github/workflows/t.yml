@@ -1,53 +1,42 @@
-name: Install TeamViewer and Retrieve ID
-
+name: macOS VNC Setup
 on:
-  workflow_dispatch: # Allows manual trigger
+  workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: macos-14 # Use macOS runner
+  setup-vnc:
+    runs-on: macOS-14
+    timeout-minutes: 30
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-      - name: Install TeamViewer
-        run: |
-          brew install --cask teamviewer
-          echo "TeamViewer installed successfully."
+    - name: Setup environment
+      run: |
+        # Install Homebrew if not exists
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        echo "$(brew --prefix)/opt/openssl@3/bin" >> $GITHUB_PATH
 
-      - name: Wait for TeamViewer to initialize
-        run: |
-          echo "Waiting for TeamViewer to initialize..."
-          sleep 10 # Give some time for TeamViewer to register an ID
+    - name: Install dependencies
+      run: |
+        brew update
+        brew install perl
+        brew install --cask ngrok
 
-      - name: Check TeamViewer Installation
-        run: |
-          if ! command -v teamviewer &> /dev/null; then
-            echo "TeamViewer installation failed!"
-            exit 1
-          fi
-          echo "TeamViewer is installed."
+    - name: Make script executable
+      run: chmod +x setup.sh
 
-      - name: Get TeamViewer ID
-        run: |
-          # Try to retrieve the TeamViewer ID
-          TEAMVIEWER_ID=$(teamviewer info | grep "TeamViewer ID" | awk '{print $4}')
-          
-          if [[ -z "$TEAMVIEWER_ID" ]]; then
-            echo "Failed to retrieve TeamViewer ID!"
-            exit 1
-          fi
-          
-          echo "TeamViewer ID: $TEAMVIEWER_ID"
-          echo "TEAMVIEWER_ID=$TEAMVIEWER_ID" >> $GITHUB_ENV
+    - name: Run VNC Setup
+      env:
+        NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+        PASSWD: ${{ secrets.VNC_PASSWORD }}
+      run: |
+        ./setup.sh "$PASSWD" "$PASSWD" "$NGROK_AUTH_TOKEN"
 
-      - name: Save TeamViewer ID to File
-        run: |
-          echo "$TEAMVIEWER_ID" > teamviewer_id.txt
+    - name: Get Ngrok URL
+      run: |
+        sleep 25  # Wait for ngrok to start
+        echo "Ngrok URL: $(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url')"
 
-      - name: Upload TeamViewer ID as Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: TeamViewer-ID
-          path: teamviewer_id.txt
-          if-no-files-found: error # Fail if file is missing
+    - name: Debug with tmate
+      if: ${{ failure() }}
+      uses: mxschmitt/action-tmate@v3
