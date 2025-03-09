@@ -1,70 +1,64 @@
-#setup.sh VNC_USER_PASSWORD VNC_PASSWORD NGROK_AUTH_TOKEN
+#!/bin/bash
+# Full fixed setup.sh script for macOS VNC configuration
+# Usage: ./setup.sh VNC_USER_PASSWORD VNC_PASSWORD NGROK_AUTH_TOKEN
 
-#disable spotlight indexing
+# Disable spotlight indexing
 sudo mdutil -i off -a
 
-#Create new account
+# Create new user account with proper home directory
 sudo dscl . -create /Users/KrypticBit
 sudo dscl . -create /Users/KrypticBit UserShell /bin/bash
 sudo dscl . -create /Users/KrypticBit RealName "KrypticBit"
 sudo dscl . -create /Users/KrypticBit UniqueID 1001
 sudo dscl . -create /Users/KrypticBit PrimaryGroupID 80
-sudo dscl . -create /Users/KrypticBit NFSHomeDirectory /Users/vncuser
+sudo dscl . -create /Users/KrypticBit NFSHomeDirectory /Users/KrypticBit
 sudo dscl . -passwd /Users/KrypticBit $1
-sudo dscl . -passwd /Users/KrypticBit $1
-sudo createhomedir -c -u akhil > /dev/null
+sudo createhomedir -c -u KrypticBit > /dev/null
 
-#Enable VNC
-sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -configure -allowAccessFor -allUsers -privs -all
-sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -configure -clientopts -setvnclegacy -vnclegacy yes 
+# Configure Remote Management and VNC
+sudo systemsetup -setremotelogin on
+sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
+  -activate -configure -access -on \
+  -clientopts -setvnclegacy -vnclegacy yes \
+  -clientopts -setvncpw -vncpw $(echo "$2" | perl -MCrypt::PasswdMD5 -nle 'print unix_md5_crypt($_)') \
+  -restart -agent -privs -all
 
-#VNC password - http://hints.macworld.com/article.php?story=20071103011608872
-echo $2 | perl -we 'BEGIN { @k = unpack "C*", pack "H*", "1734516E8BA8C5E2FF1C39567390ADCA"}; $_ = <>; chomp; s/^(.{8}).*/$1/; @p = unpack "C*", $_; foreach (@k) { printf "%02X", $_ ^ (shift @p || 0) }; print "\n"' | sudo tee /Library/Preferences/com.apple.VNCSettings.txt
+# Set VNC password using modern method
+echo "$2" | sudo vncpasswd -service
+sudo /usr/bin/defaults write /Library/Preferences/com.apple.RemoteManagement.plist VNCPassword -data $(echo "$2" | openssl base64)
 
-#Start VNC/reset changes
-sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -restart -agent -console
-sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -activate
+# Configure energy settings to prevent sleep
+sudo systemsetup -setdisplaysleep 0
+sudo pmset -a displaysleep 0
 
-
-#Enable Performance mode
+# Enable performance mode
 sudo nvram boot-args="serverperfmode=1 $(nvram boot-args 2>/dev/null | cut -f 2-)"
 
+# Configure multi-session and security settings
+sudo /usr/bin/defaults write /Library/Preferences/.GlobalPreferences MultipleSessionsEnabled -bool TRUE
+sudo defaults write /Library/Preferences/com.apple.loginwindow DisableScreenLock -bool true
+sudo defaults write /Library/Preferences/com.apple.loginwindow AllowList -array '*'
 
+# Reset privacy permissions
+sudo tccutil reset ScreenCapture
+sudo tccutil reset Accessibility
 
-#Enable Multi-Session
-sudo /usr/bin/defaults write .GlobalPreferences MultipleSessionsEnabled -bool TRUE
+# Install required packages
+brew install --cask ngrok teamviewer firefox folx
 
-defaults write "Apple Global Domain" MultipleSessionsEnabled -bool true
+# Configure ngrok with delay to ensure VNC is ready
+( sleep 15 && ngrok authtoken $3 && ngrok tcp 5900 --region=in ) &
 
-#Disable Screen-Lock
-defaults write com.apple.loginwindow DisableScreenLock -bool true
+# Diagnostic commands
+echo "=== Verification Commands ==="
+echo "1. VNC Port Listening:"
+sudo netstat -an | grep 5900
+echo "2. Screen Sharing Logs:"
+tail -f /var/log/system.log | grep -i "screen sharing"
+echo "3. User Sessions:"
+who
+echo "4. Remote Management Status:"
+sudo systemsetup -getremotelogin
 
-defaults write com.apple.loginwindow AllowList -string '*'
-
-
-#install ngrok
-brew install --cask ngrok
-#install chrome
-#brew install --cask google-chrome
-#install TeamViewer
-brew install --cask teamviewer
-brew install --cask firefox
-brew install --cask folx
-
-#IDE
-#brew  install --cask intellij-idea-ce
-#brew install --cask android-studio
-
-
-
-
-#Reduce Motion and Transparency 
-defaults write com.apple.Accessibility DifferentiateWithoutColor -int 1
-defaults write com.apple.Accessibility ReduceMotionEnabled -int 1
-defaults write com.apple.universalaccess reduceMotion -int 1
-defaults write com.apple.universalaccess reduceTransparency -int 1
-defaults write com.apple.Accessibility ReduceMotionEnabled -int 1
-
-#configure ngrok and start it
-ngrok authtoken $3
-ngrok tcp 5900 --region=in &
+# Keep the session alive for troubleshooting
+while true; do sleep 60; done
