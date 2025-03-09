@@ -1,42 +1,38 @@
-name: macOS VNC Setup
-on:
-  workflow_dispatch:
+name: Mac Remote Access
+
+on:  
+  workflow_dispatch  # Manually trigger the workflow
 
 jobs:
-  setup-vnc:
-    runs-on: macOS-14
-    timeout-minutes: 30
+  remote-access:
+    runs-on: macos-latest  # Uses GitHub-hosted Mac runner
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        
+      - name: Install Ngrok
+        run: |
+          brew install ngrok
+          ngrok config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
 
-    - name: Setup environment
-      run: |
-        # Install Homebrew if not exists
-        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-        echo "$(brew --prefix)/opt/openssl@3/bin" >> $GITHUB_PATH
+      - name: Start SSH Server
+        run: |
+          sudo systemsetup -setremotelogin on
+          sudo dscl . -create /Users/github
+          sudo dscl . -passwd /Users/github password123
+          sudo dscl . -append /Groups/admin GroupMembership github
+          sudo systemsetup -setremotelogin on
+          sudo launchctl load /System/Library/LaunchDaemons/ssh.plist
+          
+      - name: Start Ngrok Tunnel
+        run: |
+          ngrok tcp 22 > /dev/null &
+          sleep 5
+          curl -s http://localhost:4040/api/tunnels > tunnels.json
+          echo "Ngrok SSH Tunnel:"
+          cat tunnels.json | jq -r '.tunnels[0].public_url'
 
-    - name: Install dependencies
-      run: |
-        brew update
-        brew install perl
-        brew install --cask ngrok
-
-    - name: Make script executable
-      run: chmod +x setup.sh
-
-    - name: Run VNC Setup
-      env:
-        NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
-        PASSWD: ${{ secrets.VNC_PASSWORD }}
-      run: |
-        ./setup.sh "$PASSWD" "$PASSWD" "$NGROK_AUTH_TOKEN"
-
-    - name: Get Ngrok URL
-      run: |
-        sleep 25  # Wait for ngrok to start
-        echo "Ngrok URL: $(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url')"
-
-    - name: Debug with tmate
-      if: ${{ failure() }}
-      uses: mxschmitt/action-tmate@v3
+      - name: Show Connection Details
+        run: |
+          echo "SSH Command:"
+          echo "ssh github@$(cat tunnels.json | jq -r '.tunnels[0].public_url' | sed 's/tcp:\/\///')"
